@@ -1,16 +1,22 @@
 from flask import Flask, request, Response, json
 from flask_restful import Resource, Api
+from http import HTTPStatus
 
 
 app = Flask(__name__)
 api = Api(app)
+
+response_messages = {'not_ready': "Results not ready",
+                     'bid_low': "Bid is too low",
+                     'item_not_found': "Item not found",
+                     'user_not_found': "User not found"}
 
 
 def create_response(data, status):
     """
     Simple function to create responses
     """
-    return Response(response=data, status=status, mimetype='application/json')
+    return Response(response=json.dumps(data), status=status, mimetype='application/json')
 
 
 class DataStore:
@@ -19,7 +25,7 @@ class DataStore:
     Simulates database with 2D tables 'users', 'items' and 'results'
     """
     def __init__(self):
-        self.data_store = {'users': {'nice': {'kek': 10}}, 'items': {}, 'results': {}}
+        self.data_store = {'users': {}, 'items': {}, 'results': {}}
 
     def save(self, table, row, value):
         """
@@ -32,6 +38,15 @@ class DataStore:
         else:
             self.data_store[table][row] = value
 
+    def save_users(self, row, value):
+        self.save('users', row, value)
+
+    def save_items(self, row, value):
+        self.save('items', row, value)
+
+    def save_results(self, row, value):
+        self.save('results', row, value)
+
     def get(self, table, row=None, column=None):
         """
         Getting a specified table, row or cell
@@ -42,6 +57,17 @@ class DataStore:
             return self.data_store[table][row]
         else:
             return self.data_store[table]
+
+    def get_users(self, row=None, column=None):
+        return self.get('users', row, column)
+
+    def get_items(self, row=None, column=None):
+        return self.get('items', row, column)
+
+    def get_results(self, row=None, column=None):
+        return self.get('results', row, column)
+
+
 
 
 class Auction(Resource):
@@ -54,16 +80,16 @@ class Auction(Resource):
         Returns the result
         """
         # getting all items
-        items = bidding_ds.get(table='items')
+        items = bidding_ds.get_items()
         for item in items:
             user, bid = items[item]['lowest_bid']
             # checking for the lowest bid
             if bid is not None:
-                result_entry = dict(table='results', row=item, value=(user, bid))
-                bidding_ds.save(**result_entry)
+                result_entry = dict(row=item, value=(user, bid))
+                bidding_ds.save_results(**result_entry)
         # creating a response
-        response_data = json.dumps(bidding_ds.get(table='results'))
-        status = 200
+        response_data = bidding_ds.get_results()
+        status = HTTPStatus.OK
         return create_response(response_data, status)
 
     def post(self):
@@ -74,11 +100,11 @@ class Auction(Resource):
         item_list = request.form.to_dict()
         # adding each item
         for item in item_list:
-            item_entry = dict(table='items', row=item, value={'starting_bid': float(item_list[item]), 'lowest_bid': (None, None)})
-            bidding_ds.save(**item_entry)
+            item_entry = dict(row=item, value={'starting_bid': float(item_list[item]), 'lowest_bid': (None, None)})
+            bidding_ds.save_items(**item_entry)
         # creating a response
-        response_data = json.dumps(bidding_ds.get(table='items'))
-        status = 201
+        response_data = bidding_ds.get_items()
+        status = HTTPStatus.ACCEPTED
         return create_response(response_data, status)
 
 
@@ -93,21 +119,21 @@ class Bidding(Resource):
         else auction results are returned, if available
         """
         # getting user bids and results, if available
-        users_bids = bidding_ds.get(table='users')
-        results = bidding_ds.get(table='results')
+        users_bids = bidding_ds.get_users()
+        results = bidding_ds.get_results()
         # creating a response
         if user_id in users_bids:
-            response_data = json.dumps(users_bids[user_id])
-            status = 200
+            response_data = users_bids[user_id]
+            status = HTTPStatus.OK
         elif not user_id and results:
-            response_data = json.dumps(results)
-            status = 200
+            response_data = results
+            status = HTTPStatus.OK
         elif not user_id and not results:
-            response_data = json.dumps("Results not ready")
-            status = 404
+            response_data = response_messages['not_ready']
+            status = HTTPStatus.NOT_FOUND
         else:
-            response_data = json.dumps("User not found")
-            status = 404
+            response_data = response_messages['user_not_found']
+            status = HTTPStatus.NOT_FOUND
         return create_response(response_data, status)
 
     def post(self, user_id=None):
@@ -117,7 +143,7 @@ class Bidding(Resource):
         user = request.form.get('user_id')
         item = request.form.get('item_id')
         # getting all items
-        items = bidding_ds.get(table='items')
+        items = bidding_ds.get_items()
         # checking item existence in bidding list
         if item in items:
             bid = float(request.form.get('bid'))
@@ -125,20 +151,20 @@ class Bidding(Resource):
             _, lowest_bid = items[item]['lowest_bid']
             # checking bid for eligibility
             if bid >= starting_bid:
-                user_entry = dict(table='users', row=user, value={item: bid})
-                bidding_ds.save(**user_entry)
+                user_entry = dict(row=user, value={item: bid})
+                bidding_ds.save_users(**user_entry)
                 # checking bid for lowest
                 if not lowest_bid or bid < lowest_bid:
-                    bidding_ds.save(table='items', row=item, value={'lowest_bid': (user, bid)})
+                    bidding_ds.save_items(row=item, value={'lowest_bid': (user, bid)})
                 # creating a response
-                response_data = json.dumps({user: {item: bid}})
-                status = 201
+                response_data = {user: {item: bid}}
+                status = HTTPStatus.ACCEPTED
             else:
-                response_data = json.dumps("Bid is too low")
-                status = 406
+                response_data = response_messages['bid_low']
+                status = HTTPStatus.NOT_ACCEPTABLE
         else:
-            response_data = json.dumps("Item not found")
-            status = 404
+            response_data = response_messages['item_not_found']
+            status = HTTPStatus.NOT_FOUND
         return create_response(response_data, status)
 
 
