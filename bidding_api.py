@@ -21,33 +21,33 @@ def create_response(data, status):
 
 class DataStore:
     """
-    Data storage mock-up with save and get functions
+    Data storage mock-up with _save and _get functions
     Simulates database with 2D tables 'users', 'items' and 'results'
     """
     def __init__(self):
         self.data_store = {'users': {}, 'items': {}, 'results': {}}
 
-    def save(self, table, row, value):
+    def _save(self, table, some_id, value):
         """
         Saving a new row in a table
-        row - row index
-        value - columns values for that row
+        some_id - id (index) of a new entry
+        value - columns values for that entry
         """
-        if row in self.data_store[table]:
-            self.data_store[table][row].update(value)
+        if some_id in self.data_store[table]:
+            self.data_store[table][some_id].update(value)
         else:
-            self.data_store[table][row] = value
+            self.data_store[table][some_id] = value
 
-    def save_users(self, row, value):
-        self.save('users', row, value)
+    def save_users(self, user_id, value):
+        self._save('users', user_id, value)
 
-    def save_items(self, row, value):
-        self.save('items', row, value)
+    def save_items(self, item_id, value):
+        self._save('items', item_id, value)
 
-    def save_results(self, row, value):
-        self.save('results', row, value)
+    def save_results(self, result_id, value):
+        self._save('results', result_id, value)
 
-    def get(self, table, row=None, column=None):
+    def _get(self, table, row=None, column=None):
         """
         Getting a specified table, row or cell
         """
@@ -59,15 +59,13 @@ class DataStore:
             return self.data_store[table]
 
     def get_users(self, row=None, column=None):
-        return self.get('users', row, column)
+        return self._get('users', row, column)
 
     def get_items(self, row=None, column=None):
-        return self.get('items', row, column)
+        return self._get('items', row, column)
 
     def get_results(self, row=None, column=None):
-        return self.get('results', row, column)
-
-
+        return self._get('results', row, column)
 
 
 class Auction(Resource):
@@ -85,8 +83,7 @@ class Auction(Resource):
             user, bid = items[item]['lowest_bid']
             # checking for the lowest bid
             if bid is not None:
-                result_entry = dict(row=item, value=(user, bid))
-                bidding_ds.save_results(**result_entry)
+                bidding_ds.save_results(result_id=item, value=(user, bid))
         # creating a response
         response_data = bidding_ds.get_results()
         status = HTTPStatus.OK
@@ -100,8 +97,8 @@ class Auction(Resource):
         item_list = request.form.to_dict()
         # adding each item
         for item in item_list:
-            item_entry = dict(row=item, value={'starting_bid': float(item_list[item]), 'lowest_bid': (None, None)})
-            bidding_ds.save_items(**item_entry)
+            bidding_ds.save_items(item_id=item, value={'starting_bid': float(item_list[item]),
+                                                       'lowest_bid': (None, None)})
         # creating a response
         response_data = bidding_ds.get_items()
         status = HTTPStatus.ACCEPTED
@@ -151,11 +148,10 @@ class Bidding(Resource):
             _, lowest_bid = items[item]['lowest_bid']
             # checking bid for eligibility
             if bid >= starting_bid:
-                user_entry = dict(row=user, value={item: bid})
-                bidding_ds.save_users(**user_entry)
+                bidding_ds.save_users(user_id=user, value={item: bid})
                 # checking bid for lowest
                 if not lowest_bid or bid < lowest_bid:
-                    bidding_ds.save_items(row=item, value={'lowest_bid': (user, bid)})
+                    bidding_ds.save_items(item_id=item, value={'lowest_bid': (user, bid)})
                 # creating a response
                 response_data = {user: {item: bid}}
                 status = HTTPStatus.ACCEPTED
