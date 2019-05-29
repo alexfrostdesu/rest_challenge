@@ -67,6 +67,12 @@ class DataStore:
     def get_results(self, row=None, column=None):
         return self._get('results', row, column)
 
+    def truncate_ds(self):
+        """
+        Simulates truncation of all tables
+        """
+        self.data_store = {'users': {}, 'items': {}, 'results': {}}
+
 
 class Auction(Resource):
     """
@@ -93,6 +99,8 @@ class Auction(Resource):
         """
         Creates item bidding list
         """
+        # assuming that we need to delete previous auction
+        bidding_ds.truncate_ds()
         # getting new item bidding list
         item_list = request.form.to_dict()
         # adding each item
@@ -171,4 +179,4 @@ api.add_resource(Auction, '/auction/')
 if __name__ == '__main__':
     # creating a mock-up data storage
     bidding_ds = DataStore()
-    app.run()
+    app.run(port=5000)
