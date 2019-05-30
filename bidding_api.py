@@ -9,7 +9,8 @@ api = Api(app)
 response_messages = {'not_ready': "Results not ready",
                      'bid_low': "Bid is too low",
                      'item_not_found': "Item not found",
-                     'user_not_found': "User not found"}
+                     'user_not_found': "User not found",
+                     'no_list_sent': "No item found in sent list"}
 
 
 def create_response(data, status):
@@ -38,6 +39,7 @@ class DataStore:
         else:
             self.data_store[table][some_id] = value
 
+    # Simulating saving to different tables in database
     def save_users(self, user_id, value):
         self._save('users', user_id, value)
 
@@ -58,6 +60,7 @@ class DataStore:
         else:
             return self.data_store[table]
 
+    # Simulating access to different tables in database
     def get_users(self, row=None, column=None):
         return self._get('users', row, column)
 
@@ -86,10 +89,10 @@ class Auction(Resource):
         # getting all items
         items = bidding_ds.get_items()
         for item in items:
-            user, bid = items[item]['lowest_bid']
+            bid, user = items[item]['lowest_bid'], items[item]['lowest_bidder']
             # checking for the lowest bid
             if bid is not None:
-                bidding_ds.save_results(result_id=item, value=(user, bid))
+                bidding_ds.save_results(result_id=item, value={'lowest_bid': bid, 'lowest_bidder': user})
         # creating a response
         response_data = bidding_ds.get_results()
         status = HTTPStatus.OK
@@ -103,13 +106,18 @@ class Auction(Resource):
         bidding_ds.truncate_ds()
         # getting new item bidding list
         item_list = request.form.to_dict()
-        # adding each item
-        for item in item_list:
-            bidding_ds.save_items(item_id=item, value={'starting_bid': float(item_list[item]),
-                                                       'lowest_bid': (None, None)})
-        # creating a response
-        response_data = bidding_ds.get_items()
-        status = HTTPStatus.ACCEPTED
+        if item_list:
+            # adding each item
+            for item in item_list:
+                bidding_ds.save_items(item_id=item, value={'starting_bid': float(item_list[item]),
+                                                           'lowest_bidder': None,
+                                                           'lowest_bid': None})
+            # creating a response
+            response_data = bidding_ds.get_items()
+            status = HTTPStatus.ACCEPTED
+        else:
+            response_data = response_messages['no_list_sent']
+            status = HTTPStatus.BAD_REQUEST
         return create_response(response_data, status)
 
 
@@ -153,19 +161,19 @@ class Bidding(Resource):
         if item in items:
             bid = float(request.form.get('bid'))
             starting_bid = items[item]['starting_bid']
-            _, lowest_bid = items[item]['lowest_bid']
+            lowest_bid = items[item]['lowest_bid']
             # checking bid for eligibility
             if bid >= starting_bid:
                 bidding_ds.save_users(user_id=user, value={item: bid})
                 # checking bid for lowest
                 if not lowest_bid or bid < lowest_bid:
-                    bidding_ds.save_items(item_id=item, value={'lowest_bid': (user, bid)})
+                    bidding_ds.save_items(item_id=item, value={'lowest_bid': bid, 'lowest_bidder': user})
                 # creating a response
                 response_data = {user: {item: bid}}
                 status = HTTPStatus.ACCEPTED
             else:
                 response_data = response_messages['bid_low']
-                status = HTTPStatus.NOT_ACCEPTABLE
+                status = HTTPStatus.BAD_REQUEST
         else:
             response_data = response_messages['item_not_found']
             status = HTTPStatus.NOT_FOUND
