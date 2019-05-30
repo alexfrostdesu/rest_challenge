@@ -10,7 +10,8 @@ response_messages = {'not_ready': "Results not ready",
                      'bid_low': "Bid is too low",
                      'item_not_found': "Item not found",
                      'user_not_found': "User not found",
-                     'no_list_sent': "No item found in sent list"}
+                     'no_list_sent': "No item found in sent list",
+                     'auction_not_started': "Auction have not started yet"}
 
 
 def create_response(data, status):
@@ -86,13 +87,15 @@ class Auction(Resource):
         Initiates bid award process
         Returns the result
         """
-        # getting all items
-        items = bidding_ds.get_items()
-        for item in items:
-            bid, user = items[item]['lowest_bid'], items[item]['lowest_bidder']
-            # checking for the lowest bid
-            if bid is not None:
-                bidding_ds.save_results(result_id=item, value={'lowest_bid': bid, 'lowest_bidder': user})
+        results = bidding_ds.get_results()
+        if not results:
+            # getting all items
+            items = bidding_ds.get_items()
+            for item in items:
+                bid, user = items[item]['lowest_bid'], items[item]['lowest_bidder']
+                # checking for the lowest bid
+                if bid is not None:
+                    bidding_ds.save_results(result_id=item, value={'lowest_bid': bid, 'lowest_bidder': user})
         # creating a response
         response_data = bidding_ds.get_results()
         status = HTTPStatus.OK
@@ -143,7 +146,7 @@ class Bidding(Resource):
             status = HTTPStatus.OK
         elif not user_id and not results:
             response_data = response_messages['not_ready']
-            status = HTTPStatus.NOT_FOUND
+            status = HTTPStatus.SERVICE_UNAVAILABLE
         else:
             response_data = response_messages['user_not_found']
             status = HTTPStatus.NOT_FOUND
@@ -157,26 +160,30 @@ class Bidding(Resource):
         item = request.form.get('item_id')
         # getting all items
         items = bidding_ds.get_items()
-        # checking item existence in bidding list
-        if item in items:
-            bid = float(request.form.get('bid'))
-            starting_bid = items[item]['starting_bid']
-            lowest_bid = items[item]['lowest_bid']
-            # checking bid for eligibility
-            if bid >= starting_bid:
-                bidding_ds.save_users(user_id=user, value={item: bid})
-                # checking bid for lowest
-                if not lowest_bid or bid < lowest_bid:
-                    bidding_ds.save_items(item_id=item, value={'lowest_bid': bid, 'lowest_bidder': user})
-                # creating a response
-                response_data = {user: {item: bid}}
-                status = HTTPStatus.ACCEPTED
+        if items:
+            # checking item existence in bidding list
+            if item in items:
+                bid = float(request.form.get('bid'))
+                starting_bid = items[item]['starting_bid']
+                lowest_bid = items[item]['lowest_bid']
+                # checking bid for eligibility
+                if bid >= starting_bid:
+                    bidding_ds.save_users(user_id=user, value={item: bid})
+                    # checking bid for lowest
+                    if not lowest_bid or bid < lowest_bid:
+                        bidding_ds.save_items(item_id=item, value={'lowest_bid': bid, 'lowest_bidder': user})
+                    # creating a response
+                    response_data = {user: {item: bid}}
+                    status = HTTPStatus.ACCEPTED
+                else:
+                    response_data = response_messages['bid_low']
+                    status = HTTPStatus.BAD_REQUEST
             else:
-                response_data = response_messages['bid_low']
-                status = HTTPStatus.BAD_REQUEST
+                response_data = response_messages['item_not_found']
+                status = HTTPStatus.NOT_FOUND
         else:
-            response_data = response_messages['item_not_found']
-            status = HTTPStatus.NOT_FOUND
+            response_data = response_messages['auction_not_started']
+            status = HTTPStatus.SERVICE_UNAVAILABLE
         return create_response(response_data, status)
 
 
